@@ -1,0 +1,35 @@
+package cmd
+
+import (
+	"context"
+	"log"
+
+	"github.com/spf13/cobra"
+	"github.com/whitfieldsdad/go-audit/monitor"
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "audit",
+	Short: "Audit monitor",
+}
+
+var runCmd = &cobra.Command{
+	Use:   "run",
+	Short: "Run the audit monitor",
+	Run: func(cmd *cobra.Command, args []string) {
+		ctx := context.Background()
+		monitor, err := monitor.NewWindowsProcessMonitor()
+		if err != nil {
+			log.Fatalf("Failed to create process monitor: %v", err)
+		}
+		monitor.Run(ctx)
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(runCmd)
+}
+
+func Execute() error {
+	return rootCmd.Execute()
+}
