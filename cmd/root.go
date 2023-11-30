@@ -22,7 +22,10 @@ var runCmd = &cobra.Command{
 		if err != nil {
 			log.Fatalf("Failed to create process monitor: %v", err)
 		}
-		monitor.Run(ctx)
+		err = monitor.Run(ctx)
+		if err != nil {
+			log.Fatalf("Failed to run process monitor: %v", err)
+		}
 	},
 }
 

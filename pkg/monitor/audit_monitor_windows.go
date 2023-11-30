@@ -41,19 +41,21 @@ var (
 )
 
 type WindowsProcessMonitor struct {
+	events    chan *Event
 	rawEvents chan *etw.Event
 }
 
 func NewWindowsProcessMonitor() (*WindowsProcessMonitor, error) {
+	events := make(chan *Event, EventBufferSize)
 	rawEvents := make(chan *etw.Event, EventBufferSize)
+
 	return &WindowsProcessMonitor{
+		events:    events,
 		rawEvents: rawEvents,
 	}, nil
 }
 
 func (m WindowsProcessMonitor) Run(ctx context.Context) error {
-	var wg sync.WaitGroup
-	wg.Add(2)
 
 	// Create the ETW session.
 	s := etw.NewRealTimeSession(etwSessionName)
@@ -74,10 +76,15 @@ func (m WindowsProcessMonitor) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 
 	// Start goroutines for:
-	// - Reading raw events from the ETW session
+	// - Reading events
 	// - Parsing events
+	// - Emitting events
+	var wg sync.WaitGroup
+	wg.Add(3)
+
 	go m.goReadEvents(ctx, cancel, s, &wg)
 	go m.goParseEvents(ctx, &wg)
+	go m.goEmitEvents(ctx, &wg)
 
 	// Cancel the context on SIGINT.
 	sigCh := make(chan os.Signal, 1)
@@ -143,11 +150,7 @@ func (m WindowsProcessMonitor) goParseEvents(ctx context.Context, wg *sync.WaitG
 			if err != nil {
 				log.Errorf("Failed to parse event: %s", err)
 			}
-			b, err := json.Marshal(e)
-			if err != nil {
-				log.Errorf("Failed to marshal event: %s", err)
-			}
-			fmt.Println(string(b))
+			m.events <- e
 		case <-ctx.Done():
 			log.Info("Stopped parsing events")
 			return
@@ -238,4 +241,27 @@ func (m WindowsProcessMonitor) parseEvent(e *etw.Event) (*Event, error) {
 		}, nil
 	}
 	return nil, nil
+}
+
+func (m WindowsProcessMonitor) goEmitEvents(ctx context.Context, wg *sync.WaitGroup) {
+	var (
+		e   *Event
+		err error
+		b   []byte
+	)
+	defer wg.Done()
+
+	for {
+		select {
+		case e = <-m.events:
+			b, err = json.Marshal(e)
+			if err != nil {
+				log.Errorf("Failed to marshal event: %s", err)
+			}
+			fmt.Println(string(b))
+		case <-ctx.Done():
+			log.Info("Stopped emitting events")
+			return
+		}
+	}
 }
