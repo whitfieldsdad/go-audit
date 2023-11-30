@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/spf13/cobra"
-	"github.com/whitfieldsdad/go-audit/monitor"
+	"github.com/whitfieldsdad/go-audit/pkg/monitor"
 )
 
 var rootCmd = &cobra.Command{

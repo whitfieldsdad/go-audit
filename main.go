@@ -7,10 +7,6 @@ import (
 )
 
 func main() {
-	// Set process name to "go-audit"
-
-
-
 	err := cmd.Execute()
 	if err != nil {
 		log.Fatal(err)
