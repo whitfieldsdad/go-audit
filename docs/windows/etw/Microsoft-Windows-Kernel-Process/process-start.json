@@ -1,0 +1,55 @@
+{
+  "EventData": {
+    "CreateTime": "‎2023‎-‎11‎-‎30T07:00:23.028558900Z",
+    "Flags": "0",
+    "ImageChecksum": "0x119D0",
+    "ImageName": "\\Device\\HarddiskVolume3\\Windows\\System32\\NETSTAT.EXE",
+    "MandatoryLabel": "S-1-16-8192",
+    "PackageFullName": "",
+    "PackageRelativeAppId": "",
+    "ParentProcessID": "34464",
+    "ParentProcessSequenceNumber": "178696",
+    "ProcessID": "10956",
+    "ProcessSequenceNumber": "192245",
+    "ProcessTokenElevationType": "3",
+    "ProcessTokenIsElevated": "0",
+    "SessionID": "1",
+    "TimeDateStamp": "0xDA7F7626"
+  },
+  "System": {
+    "Channel": "Microsoft-Windows-Kernel-Process/Analytic",
+    "Computer": "DESKTOP-LCV0L2T",
+    "EventID": 1,
+    "Correlation": {
+      "ActivityID": "{00000000-0000-0000-0000-000000000000}",
+      "RelatedActivityID": "{00000000-0000-0000-0000-000000000000}"
+    },
+    "Execution": {
+      "ProcessID": 34464,
+      "ThreadID": 29676
+    },
+    "Keywords": {
+      "Value": 9223372036854775824,
+      "Name": "WINEVENT_KEYWORD_PROCESS"
+    },
+    "Level": {
+      "Value": 4,
+      "Name": "Information"
+    },
+    "Opcode": {
+      "Value": 1,
+      "Name": "Start"
+    },
+    "Task": {
+      "Value": 1,
+      "Name": "ProcessStart"
+    },
+    "Provider": {
+      "Guid": "{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}",
+      "Name": "Microsoft-Windows-Kernel-Process"
+    },
+    "TimeCreated": {
+      "SystemTime": "2023-11-30T07:00:23.0285898Z"
+    }
+  }
+}

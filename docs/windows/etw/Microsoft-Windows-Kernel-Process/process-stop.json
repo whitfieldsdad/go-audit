@@ -1,0 +1,55 @@
+{
+  "EventData": {
+    "CPUCycleCount": "256150524",
+    "CommitCharge": "1126400",
+    "CommitPeak": "1126400",
+    "CreateTime": "‎2023‎-‎11‎-‎30T07:00:23.028558900Z",
+    "ExitCode": "0",
+    "ExitTime": "‎2023‎-‎11‎-‎30T07:00:23.222873800Z",
+    "HandleCount": "50",
+    "HardFaultCount": "0",
+    "ImageName": "NETSTAT.EXE",
+    "ProcessID": "10956",
+    "ProcessSequenceNumber": "192245",
+    "ReadOperationCount": "0",
+    "ReadTransferKiloBytes": "0",
+    "TokenElevationType": "3",
+    "WriteOperationCount": "0",
+    "WriteTransferKiloBytes": "0"
+  },
+  "System": {
+    "Channel": "Microsoft-Windows-Kernel-Process/Analytic",
+    "Computer": "DESKTOP-LCV0L2T",
+    "EventID": 2,
+    "Correlation": {
+      "ActivityID": "{00000000-0000-0000-0000-000000000000}",
+      "RelatedActivityID": "{00000000-0000-0000-0000-000000000000}"
+    },
+    "Execution": {
+      "ProcessID": 10956,
+      "ThreadID": 9656
+    },
+    "Keywords": {
+      "Value": 9223372036854775824,
+      "Name": "WINEVENT_KEYWORD_PROCESS"
+    },
+    "Level": {
+      "Value": 4,
+      "Name": "Information"
+    },
+    "Opcode": {
+      "Value": 2,
+      "Name": "Stop"
+    },
+    "Task": {
+      "Value": 2,
+      "Name": "ProcessStop"
+    },
+    "Provider": {
+      "Guid": "{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}",
+      "Name": "Microsoft-Windows-Kernel-Process"
+    },
+    "TimeCreated": {
+      "SystemTime": "2023-11-30T07:00:23.222975Z"
+    }
+  }

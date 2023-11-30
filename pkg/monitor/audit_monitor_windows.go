@@ -3,14 +3,18 @@ package monitor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
+	"time"
 
-	"github.com/Velocidex/etw"
+	"github.com/0xrawsec/golang-etw/etw"
 	"github.com/charmbracelet/log"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"golang.org/x/sys/windows"
+	"github.com/whitfieldsdad/go-audit/pkg/util"
 )
 
 const (
@@ -19,43 +23,52 @@ const (
 
 const (
 	WINEVENT_KEYWORD_PROCESS     = 0x10
-	WINEVENT_KEYWORD_THREAD      = 0x20
 	WINEVENT_KEYWORD_IMAGE       = 0x40
 	WindowsKernelProcessAnalytic = 0x8000000000000000
 )
 
 const (
 	ProcessStart = 1
+	ProcessStop  = 2
 )
 
 const (
 	MicrosoftWindowsKernelProcess = "{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}"
 )
 
+var (
+	EventBufferSize = 10000
+)
+
 type WindowsProcessMonitor struct {
-	providerGuid windows.GUID
-	rawEvents    map[uint16]chan etw.Event // event type -> buffered channel
+	rawEvents chan *etw.Event
 }
 
 func NewWindowsProcessMonitor() (*WindowsProcessMonitor, error) {
-	providerGuid, err := windows.GUIDFromString(MicrosoftWindowsKernelProcess)
-	if err != nil {
-		return nil, err
-	}
+	rawEvents := make(chan *etw.Event, EventBufferSize)
 	return &WindowsProcessMonitor{
-		providerGuid: providerGuid,
-		rawEvents:    make(map[uint16]chan etw.Event, EventBufferSize),
+		rawEvents: rawEvents,
 	}, nil
 }
 
 func (m WindowsProcessMonitor) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
 
-	// Create the session.
-	session, err := newSession(m.providerGuid, m.processEvent)
+	// Create the ETW session.
+	s := etw.NewRealTimeSession(etwSessionName)
+	if s == nil {
+		return errors.New("failed to create ETW session")
+	}
+	defer s.Stop()
+
+	// Enable the Microsoft-Windows-Kernel-Process provider.
+	p := etw.MustParseProvider(MicrosoftWindowsKernelProcess)
+	p.MatchAnyKeyword = WINEVENT_KEYWORD_PROCESS | WINEVENT_KEYWORD_IMAGE
+
+	err := s.EnableProvider(p)
 	if err != nil {
-		log.Fatalf("Failed to create ETW session: %v", err)
+		return errors.Wrap(err, "failed to enable Microsoft-Windows-Kernel-Process provider")
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -63,8 +76,8 @@ func (m WindowsProcessMonitor) Run(ctx context.Context) error {
 	// Start goroutines for:
 	// - Reading raw events from the ETW session
 	// - Parsing events
-	go m.goReadEvents(ctx, cancel, session, &wg)
-	//go m.goParseEvents(ctx, &wg)
+	go m.goReadEvents(ctx, cancel, s, &wg)
+	go m.goParseEvents(ctx, &wg)
 
 	// Cancel the context on SIGINT.
 	sigCh := make(chan os.Signal, 1)
@@ -86,129 +99,143 @@ func (m WindowsProcessMonitor) Run(ctx context.Context) error {
 	return nil
 }
 
-func (m WindowsProcessMonitor) goReadEvents(ctx context.Context, cancel context.CancelFunc, session *etw.Session, wg *sync.WaitGroup) {
+func (m WindowsProcessMonitor) goReadEvents(ctx context.Context, cancel context.CancelFunc, s *etw.RealTimeSession, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	killed := false
+	c := etw.NewRealTimeConsumer(ctx)
+	defer c.Stop()
+
+	c.FromSessions(s)
 
 	go func() {
-		log.Info("Reading events...")
-		err := session.Process()
-		if err != nil {
-			log.Fatalf("Failed to process events: %v", err)
+		for e := range c.Events {
+			t := e.System.EventID
+			if !(t == ProcessStart || t == ProcessStop) {
+				continue
+			}
+			m.rawEvents <- e
 		}
-		killed = true
-		cancel()
 	}()
 
-	<-ctx.Done()
-
-	if killed {
-		log.Warn("session killed by external process")
-	} else {
-		log.Info("Closing session...")
-
-		// TODO: remove session.UnsubscribeFromProvider() after recursive locking bug is fixed in session.Close() function
-		err := session.UnsubscribeFromProvider(m.providerGuid)
-		if err != nil {
-			log.Errorf("Failed to unsubscribe from provider: %v", err)
-		}
-		err = session.Close()
-		if err != nil {
-			log.Errorf("Failed to close session: %v", err)
-		}
-	}
-	log.Info("Stopped reading events")
-}
-
-func (m WindowsProcessMonitor) processEvent(e *etw.Event) {
-	t := e.Header.EventDescriptor.ID
-	if t != 1 {
+	log.Info("Starting consumer...")
+	err := c.Start()
+	if err != nil {
+		log.Errorf("Failed to start consumer: %s", err)
+		cancel()
 		return
 	}
-	printEtwEvent(e)
-	if _, ok := m.rawEvents[t]; !ok {
-		m.rawEvents[t] = make(chan etw.Event, EventBufferSize)
-	}
-	m.rawEvents[t] <- *e
+	log.Info("Started consumer")
+
+	<-ctx.Done()
+	log.Info("Stopped reading events")
 }
 
 func (m WindowsProcessMonitor) goParseEvents(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for {
-		for _, c := range m.rawEvents {
-			select {
-			case e := <-c:
-				blob, _ := json.Marshal(e)
-				log.Infof("Read audit event: %s", string(blob))
-			case <-ctx.Done():
-				return
-			default:
+		select {
+		case r := <-m.rawEvents:
+			e, err := m.parseEvent(r)
+			if e == nil {
 				continue
 			}
+			if err != nil {
+				log.Errorf("Failed to parse event: %s", err)
+			}
+			b, err := json.Marshal(e)
+			if err != nil {
+				log.Errorf("Failed to marshal event: %s", err)
+			}
+			fmt.Println(string(b))
+		case <-ctx.Done():
+			log.Info("Stopped parsing events")
+			return
 		}
 	}
 }
 
-func newSession(providerGuid windows.GUID, cb etw.EventCallback) (*etw.Session, error) {
-	var session *etw.Session
-	var sessionExistsErr etw.ExistsError
-	var err error
+func (m WindowsProcessMonitor) parseEvent(e *etw.Event) (*Event, error) {
+	var (
+		err        error
+		ppid       *int
+		createTime *time.Time
+	)
 
-	var createSession = func() (*etw.Session, error) {
-		return etw.NewSession(etwSessionName, cb)
+	eventId := e.System.EventID
+	if !(eventId == ProcessStart || eventId == ProcessStop) {
+		return nil, nil
 	}
-	log.Infof("Creating session: %s", etwSessionName)
-	session, err = createSession()
-	if err != nil {
-		if !errors.As(err, &sessionExistsErr) {
-			return nil, errors.Wrap(err, "failed to create session")
-		}
-		log.Infof("session already exists: %s", etwSessionName)
-		err = etw.KillSession(etwSessionName)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to kill existing session")
-		}
-		log.Infof("Killed existing session: %s", etwSessionName)
-		session, err = createSession()
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create session")
+	pid := int(e.System.Execution.ProcessID)
+
+	parentProcessID, ok := e.EventData["ParentProcessID"].(string)
+	if ok {
+		if ppidInt, err := strconv.Atoi(parentProcessID); err == nil {
+			ppid = &ppidInt
 		}
 	}
-	log.Infof("Created session: %s", etwSessionName)
 
-	// Add the provider.
-	log.Infof("Subscribing to ETW provider: %s", providerGuid.String())
+	createTimeString, ok := e.EventData["CreateTime"].(string)
+	if ok {
+		createTime, _ = util.ParseTimestamp(createTimeString)
+	}
 
-	allKeyword := uint64(0x0)
-	anyKeyword := uint64(0x50)
+	executable, _ := GetProcessExecutable(pid)
 
-	opts := etw.SessionOptions{
-		Name:            etwSessionName,
-		Guid:            providerGuid,
-		Level:           etw.TRACE_LEVEL_VERBOSE,
-		MatchAnyKeyword: anyKeyword,
-		MatchAllKeyword: allKeyword,
-	}
-	err = session.SubscribeToProvider(opts)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to subscribe to ETW provider")
-	}
-	log.Infof("Subscribed to ETW provider: %s", providerGuid.String())
-	return session, nil
-}
+	if eventId == ProcessStart {
+		if ppid == nil {
+			ppid, err = GetPPID(pid)
+			if err == nil {
+				log.Info("Resolved PPID")
+			}
+		}
+		return &Event{
+			Header: EventHeader{
+				ID:         uuid.New().String(),
+				Time:       e.System.TimeCreated.SystemTime,
+				ObjectType: "process",
+				EventType:  "started",
+			},
+			Data: &ProcessStartEventData{
+				PID:        pid,
+				PPID:       ppid,
+				CreateTime: createTime,
+				Executable: executable,
+			},
+		}, nil
 
-func printEtwEvent(e *etw.Event) {
-	data, err := e.EventProperties(false)
-	if err != nil {
-		log.Errorf("Failed to get event properties: %v", err)
-		return
+	} else if eventId == ProcessStop {
+		var (
+			exitTime *time.Time
+			exitCode *int
+		)
+		exitTimeString, ok := e.EventData["ExitTime"].(string)
+		if ok {
+			exitTime, _ = util.ParseTimestamp(exitTimeString)
+		}
+		exitCodeString, ok := e.EventData["ExitStatus"].(string)
+		if ok {
+			exitCodeInt, _ := strconv.Atoi(exitCodeString)
+			if err == nil {
+				exitCode = &exitCodeInt
+			}
+		}
+		return &Event{
+			Header: EventHeader{
+				ID:         uuid.New().String(),
+				Time:       e.System.TimeCreated.SystemTime,
+				ObjectType: "process",
+				EventType:  "stopped",
+			},
+			Data: &ProcessStopEventData{
+				PID:        pid,
+				PPID:       ppid,
+				CreateTime: createTime,
+				ExitTime:   exitTime,
+				ExitCode:   exitCode,
+				Executable: executable,
+			},
+		}, nil
 	}
-	event := map[string]interface{}{
-		"Header": e.Header,
-		"Data":   data,
-	}
-	blob, _ := json.Marshal(event)
-	log.Infof("Read audit event: %s", string(blob))
+	return nil, nil
 }
