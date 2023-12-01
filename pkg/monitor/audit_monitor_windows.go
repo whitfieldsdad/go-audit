@@ -151,7 +151,7 @@ func (m *WindowsProcessMonitor) eventMatchesFilter(e *etw.Event) bool {
 	return true
 }
 
-func (m *WindowsProcessMonitor) etwEventToProcessEntry(e *etw.Event) ProcessEntry {
+func (m *WindowsProcessMonitor) etwEventToProcessEntry(e *etw.Event) processEntry {
 	pid := int(e.System.Execution.ProcessID)
 
 	var ppid *int
@@ -164,7 +164,7 @@ func (m *WindowsProcessMonitor) etwEventToProcessEntry(e *etw.Event) ProcessEntr
 			log.Infof("Resolved PPID from PPID map (PID: %d, PPID: %d)", pid, ppid)
 		}
 	}
-	return ProcessEntry{
+	return processEntry{
 		Pid:  pid,
 		PPid: ppid,
 	}
@@ -219,6 +219,7 @@ func (m *WindowsProcessMonitor) updatePPIDMap(e *etw.Event) {
 		m.ppidMap.Remove(pid)
 		return
 	}
+
 	var ppid *int
 	if e.System.EventID == ProcessStart {
 		ppidstr, ok := e.EventData["ParentProcessID"].(string)

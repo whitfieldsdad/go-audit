@@ -7,7 +7,7 @@ import (
 	"github.com/shirou/gopsutil/v3/process"
 )
 
-type ProcessEntry struct {
+type processEntry struct {
 	Pid  int
 	PPid *int
 }
