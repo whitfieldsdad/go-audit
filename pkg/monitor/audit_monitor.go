@@ -39,3 +39,4 @@ func (m *ProcessMonitor) AddProcessFilter(filter ProcessFilter) {
 		m.processFilter.Merge(filter)
 	}
 }
+
