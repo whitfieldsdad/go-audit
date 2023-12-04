@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/0xrawsec/golang-etw/etw"
 	"github.com/charmbracelet/log"
 	"github.com/google/uuid"
-	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/pkg/errors"
 	"github.com/whitfieldsdad/go-audit/pkg/util"
 )
@@ -56,31 +54,17 @@ var (
 )
 
 type WindowsProcessMonitor struct {
-	processFilter *ProcessFilter
-	events        chan *Event
-	rawEvents     chan *etw.Event
-	ppidMap       *expirable.LRU[int, int]
+	ProcessMonitor
 }
 
 func NewWindowsProcessMonitor(f *ProcessFilter) (*WindowsProcessMonitor, error) {
-	ppidMap, err := GetPPIDMap()
+	m, err := NewProcessMonitor(f)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get PPID map")
+		return nil, errors.Wrap(err, "failed to create process monitor")
 	}
 	return &WindowsProcessMonitor{
-		processFilter: f,
-		events:        make(chan *Event, EventBufferSize),
-		rawEvents:     make(chan *etw.Event, EventBufferSize),
-		ppidMap:       ppidMap,
+		ProcessMonitor: *m,
 	}, nil
-}
-
-func (m *WindowsProcessMonitor) AddProcessFilter(filter ProcessFilter) {
-	if m.processFilter == nil {
-		m.processFilter = &filter
-	} else {
-		m.processFilter.Merge(filter)
-	}
 }
 
 func (m *WindowsProcessMonitor) Run(ctx context.Context) error {
@@ -134,24 +118,7 @@ func (m *WindowsProcessMonitor) Run(ctx context.Context) error {
 	return nil
 }
 
-// TODO
-func (m *WindowsProcessMonitor) eventMatchesFilter(e *etw.Event) bool {
-	if m.processFilter == nil {
-		return true
-	}
-	entry := m.etwEventToProcessEntry(e)
-	if len(m.processFilter.Pids) > 0 && !slices.Contains(m.processFilter.Pids, entry.Pid) {
-		return false
-	}
-	if len(m.processFilter.Ppids) > 0 {
-		if entry.PPid == nil || !slices.Contains(m.processFilter.Ppids, *entry.PPid) {
-			return false
-		}
-	}
-	return true
-}
-
-func (m *WindowsProcessMonitor) etwEventToProcessEntry(e *etw.Event) processEntry {
+func (m *WindowsProcessMonitor) eventToProcessRef(e *etw.Event) ProcessRef {
 	pid := int(e.System.Execution.ProcessID)
 
 	var ppid *int
@@ -164,13 +131,12 @@ func (m *WindowsProcessMonitor) etwEventToProcessEntry(e *etw.Event) processEntr
 			log.Infof("Resolved PPID from PPID map (PID: %d, PPID: %d)", pid, ppid)
 		}
 	}
-	return processEntry{
+	return ProcessRef{
 		Pid:  pid,
-		PPid: ppid,
+		Ppid: ppid,
 	}
 }
 
-// TODO
 func (m *WindowsProcessMonitor) goReadEvents(ctx context.Context, cancel context.CancelFunc, s *etw.RealTimeSession, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -188,11 +154,17 @@ func (m *WindowsProcessMonitor) goReadEvents(ctx context.Context, cancel context
 			}
 			log.Debugf("Read event (ID: %d, keyword name: %s, task name: %s, PID: %d)", eventId, e.System.Keywords.Name, e.System.Task.Name, pid)
 
-			// Not all events contain a PPID, so we need to keep track of PID -> PPID mappings ourselves.
 			m.updatePPIDMap(e)
 
-			if !m.eventMatchesFilter(e) {
-				continue
+			if m.processFilter != nil {
+				p := m.eventToProcessRef(e)
+				matches, err := m.processFilter.Matches(p, nil)
+				if err != nil {
+					log.Fatalf("Failed to evaluate process filter: %s", err)
+				}
+				if !matches {
+					continue
+				}
 			}
 			m.rawEvents <- e
 		}
@@ -230,7 +202,9 @@ func (m *WindowsProcessMonitor) updatePPIDMap(e *etw.Event) {
 			}
 		}
 	}
-	if ppid != nil {
+	if ppid == nil {
+		log.Warnf("Not adding process to PID map - PPID not found (PID: %d, event ID: %d)", pid, eid)
+	} else {
 		pid := int(e.System.Execution.ProcessID)
 		log.Infof("Adding PID to PPID map (PID: %d, PPID: %d, event ID: %d, size: %d)", pid, ppid, e.System.EventID, m.ppidMap.Len())
 		m.ppidMap.Add(pid, *ppid)

@@ -1,0 +1,23 @@
+{
+  "header": {
+    "id": "7617f9da-cca6-44b6-b09a-347cec3c3a08",
+    "time": "2023-12-04T12:39:42.1057664Z",
+    "object_type": "process",
+    "event_type": "started"
+  },
+  "data": {
+    "pid": 30492,
+    "ppid": 30492,
+    "create_time": "2023-12-04T12:39:42.1057309Z",
+    "executable": {
+      "path": "C:\\Program Files\\Docker\\Docker\\resources\\com.docker.backend.exe",
+      "filename": "com.docker.backend.exe",
+      "size": 43438400,
+      "hashes": {
+        "md5": "4995fd50cb6fb52ec0acffbece2964b4",
+        "sha1": "85e9031ad700f6d7acf7d4e740fe32394580862d",
+        "sha256": "7dcc54d4920119fec0fcbf2cd02d384e7dbf301682cc27d7b18ee80bf1dd3d99"
+      }
+    }
+  }
+}

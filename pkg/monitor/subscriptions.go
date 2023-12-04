@@ -1,7 +1,7 @@
 package monitor
 
 type Subscription struct {
-	ProcessFilter *ProcessFilter `json:"process_filter,omitempty"`
+	ProcessFilter *ProcessFilter `json:"processes,omitempty"`
 }
 
 func NewSubscription() *Subscription {

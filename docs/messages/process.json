@@ -1,0 +1,15 @@
+{
+  "name": "calc.exe",
+  "pid": 123,
+  "ppid": 456,
+  "executable": {
+    "path": "C:\\Windows\\System32\\calc.exe",
+    "filename": "calc.exe",
+    "size": 45056,
+    "hashes": {
+      "md5": "2f82623f9523c0d167862cad0eff6806",
+      "sha1": "5d77804b87735e66d7d1e263c31c4ef010f16153",
+      "sha256": "9c2c8a8588fe6db09c09337e78437cb056cd557db1bcf5240112cbfb7b600efb"
+    }
+  }
+}
