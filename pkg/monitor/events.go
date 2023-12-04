@@ -26,7 +26,7 @@ type ProcessStartEventData struct {
 }
 
 func (e *ProcessStartEventData) ToECS() error {
-	return nil
+	panic("implement me")
 }
 
 type ProcessStopEventData struct {
@@ -39,5 +39,5 @@ type ProcessStopEventData struct {
 }
 
 func (e *ProcessStopEventData) ToECS() error {
-	return nil
+	panic("implement me")
 }

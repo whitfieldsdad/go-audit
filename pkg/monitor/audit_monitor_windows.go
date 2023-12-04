@@ -13,6 +13,7 @@ import (
 	"github.com/0xrawsec/golang-etw/etw"
 	"github.com/charmbracelet/log"
 	"github.com/google/uuid"
+	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/pkg/errors"
 	"github.com/whitfieldsdad/go-audit/pkg/util"
 )
@@ -54,17 +55,31 @@ var (
 )
 
 type WindowsProcessMonitor struct {
-	ProcessMonitor
+	processFilter *ProcessFilter
+	events        chan *Event
+	rawEvents     chan *etw.Event
+	ppidMap       *expirable.LRU[int, int]
 }
 
 func NewWindowsProcessMonitor(f *ProcessFilter) (*WindowsProcessMonitor, error) {
-	m, err := NewProcessMonitor(f)
+	ppidMap, err := GetPPIDMap()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create process monitor")
+		return nil, errors.Wrap(err, "failed to get PPID map")
 	}
 	return &WindowsProcessMonitor{
-		ProcessMonitor: *m,
+		processFilter: f,
+		events:        make(chan *Event, EventBufferSize),
+		rawEvents:     make(chan *etw.Event, EventBufferSize),
+		ppidMap:       ppidMap,
 	}, nil
+}
+
+func (m *WindowsProcessMonitor) AddProcessFilter(filter ProcessFilter) {
+	if m.processFilter == nil {
+		m.processFilter = &filter
+	} else {
+		m.processFilter.Merge(filter)
+	}
 }
 
 func (m *WindowsProcessMonitor) Run(ctx context.Context) error {
