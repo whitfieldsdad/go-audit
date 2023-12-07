@@ -34,7 +34,7 @@ var runCmd = &cobra.Command{
 
 		// Run the monitor
 		ctx := context.Background()
-		monitor, err := monitor.NewWindowsProcessMonitor(filter)
+		monitor, err := monitor.NewAuditMonitor(filter)
 		if err != nil {
 			log.Fatalf("Failed to create process monitor: %v", err)
 		}

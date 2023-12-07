@@ -1,0 +1,15 @@
+{
+  "header": {
+    "id": "f578f31f-0673-4de1-9244-05f720e22410",
+    "time": "2023-12-07T22:36:23.3630337Z",
+    "object_type": "process",
+    "event_type": "stopped"
+  },
+  "data": {
+    "process": {
+      "pid": 23112,
+      "create_time": "2023-12-07T22:36:23.3142165Z",
+      "exit_time": "2023-12-07T22:36:23.3629376Z"
+    }
+  }
+}

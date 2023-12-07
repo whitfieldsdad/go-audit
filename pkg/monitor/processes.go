@@ -1,11 +1,66 @@
 package monitor
 
 import (
-	"github.com/charmbracelet/log"
-	"github.com/hashicorp/golang-lru/v2/expirable"
+	"strings"
+	"time"
+
 	"github.com/pkg/errors"
 	"github.com/shirou/gopsutil/v3/process"
+	"github.com/whitfieldsdad/go-audit/pkg/util"
 )
+
+type Process struct {
+	Name        string     `json:"name,omitempty"`
+	Pid         int        `json:"pid"`
+	Ppid        *int       `json:"ppid,omitempty"`
+	Executable  *File      `json:"executable,omitempty"`
+	Argv        []string   `json:"argv,omitempty"`
+	Argc        int        `json:"argc,omitempty"`
+	CommandLine string     `json:"command_line,omitempty"`
+	CreateTime  *time.Time `json:"create_time,omitempty"`
+	ExitTime    *time.Time `json:"exit_time,omitempty"`
+	ExitCode    *int       `json:"exit_code,omitempty"`
+}
+
+func GetProcess(pid int) (*Process, error) {
+	p, err := process.NewProcess(int32(pid))
+	if err != nil {
+		return nil, err
+	}
+	ppid32, err := p.Ppid()
+	if err != nil {
+		return nil, err
+	}
+	ppid := int(ppid32)
+
+	var file *File
+	exe, _ := p.Exe()
+	if exe != "" {
+		file, _ = GetFile(exe)
+	}
+	name, _ := p.Name()
+	argv, _ := p.CmdlineSlice()
+	argc := len(argv)
+	cmdline := strings.Join(argv, " ")
+
+	var (
+		startTime *time.Time
+	)
+	startTimeMs, err := p.CreateTime()
+	if err == nil {
+		startTime = util.TimeFromMs(startTimeMs)
+	}
+	return &Process{
+		Name:        name,
+		Pid:         pid,
+		Ppid:        &ppid,
+		Executable:  file,
+		Argv:        argv,
+		Argc:        argc,
+		CommandLine: cmdline,
+		CreateTime:  startTime,
+	}, nil
+}
 
 func GetPPID(pid int) (*int, error) {
 	p, err := process.NewProcess(int32(pid))
@@ -20,6 +75,14 @@ func GetPPID(pid int) (*int, error) {
 	return &ppid, nil
 }
 
+func GetProcessExecutable(pid int) (*File, error) {
+	path, err := GetProcessExecutablePath(pid)
+	if err != nil {
+		return nil, nil
+	}
+	return GetFile(path)
+}
+
 func GetProcessExecutablePath(pid int) (string, error) {
 	p, err := process.NewProcess(int32(pid))
 	if err != nil {
@@ -32,111 +95,10 @@ func GetProcessExecutablePath(pid int) (string, error) {
 	return exe, nil
 }
 
-func GetProcessExecutable(pid int) (*File, error) {
-	path, err := GetProcessExecutablePath(pid)
+func GetCommandLineArgs(pid int) ([]string, error) {
+	p, err := process.NewProcess(int32(pid))
 	if err != nil {
-		return nil, nil
+		return nil, errors.Wrap(err, "failed to get process")
 	}
-	return GetFile(path)
-}
-
-func GetPPIDMap() (*expirable.LRU[int, int], error) {
-	log.Infof("Initializing PPID map...")
-	m := expirable.NewLRU[int, int](PidMapMaxSize, nil, PidMapTTL)
-	processes, err := process.Processes()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get processes")
-	}
-	for _, p := range processes {
-		pid := int(p.Pid)
-		ppid, err := p.Ppid()
-		if err != nil {
-			continue
-		}
-		m.Add(pid, int(ppid))
-	}
-	log.Infof("Loaded %d processes into PPID map", m.Len())
-	return m, nil
-}
-
-type ProcessRef struct {
-	Pid  int  `json:"pid"`
-	Ppid *int `json:"ppid,omitempty"`
-}
-
-type Process struct {
-	Name       string `json:"name"`
-	Pid        int    `json:"pid"`
-	Ppid       *int   `json:"ppid,omitempty"`
-	Executable *File  `json:"executable,omitempty"`
-}
-
-type ProcessTreeInterface interface {
-	AddProcess(process *Process) error
-	RemoveProcess(pid int) error
-	GetParentPid(pid int) (*int, error)
-	GetChildPids(pid int) ([]int, error)
-	GetAncestorPids(pid int) ([]int, error)
-	GetDescendantPids(pid int) ([]int, error)
-	GetSiblingPids(pid int) ([]int, error)
-	GetParent(pid int) *Process
-	GetChildren(pid int) ([]Process, error)
-	GetAncestors(pid int) ([]Process, error)
-	GetDescendants(pid int) ([]Process, error)
-	GetSiblings(pid int) ([]Process, error)
-}
-
-type ProcessTree struct {
-}
-
-func NewProcessTree() ProcessTree {
-	return ProcessTree{}
-}
-
-func (t *ProcessTree) AddProcess(process *Process) error {
-	panic("implement me")
-}
-
-func (t *ProcessTree) RemoveProcess(pid int) error {
-	panic("implement me")
-}
-
-func (t *ProcessTree) GetParentPid(pid int) (*int, error) {
-	panic("implement me")
-}
-
-func (t *ProcessTree) GetChildPids(pid int) ([]int, error) {
-	panic("implement me")
-}
-
-func (t *ProcessTree) GetAncestorPids(pid int) ([]int, error) {
-	panic("implement me")
-}
-
-func (t *ProcessTree) GetDescendantPids(pid int) ([]int, error) {
-	panic("implement me")
-}
-
-func (t *ProcessTree) GetSiblingPids(pid int) ([]int, error) {
-	panic("implement me")
-}
-
-func (t *ProcessTree) GetParent(pid int) *Process {
-	panic("implement me")
-}
-
-func (t *ProcessTree) GetChildren(pid int) ([]Process, error) {
-	panic("implement me")
-}
-
-func (t *ProcessTree) GetAncestors(pid int) ([]Process, error) {
-	panic("implement me")
-}
-
-func (t *ProcessTree) GetDescendants(pid int) ([]Process, error) {
-	panic("implement me")
-}
-
-func (t *ProcessTree) GetSiblings(pid int) ([]Process, error) {
-	panic("implement me")
+	return p.CmdlineSlice()
 }

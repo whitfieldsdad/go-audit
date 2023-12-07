@@ -1,0 +1,52 @@
+{
+  "header": {
+    "id": "765c2a0f-cfb5-478d-bbb0-56a11a468dcf",
+    "time": "2023-12-07T22:36:23.3060248Z",
+    "object_type": "process",
+    "event_type": "started"
+  },
+  "data": {
+    "process": {
+      "name": "Code.exe",
+      "pid": 18516,
+      "ppid": 13340,
+      "executable": {
+        "path": "C:\\Users\\tyler\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+        "filename": "Code.exe",
+        "size": 154688032,
+        "hashes": {
+          "md5": "a4f94a6854f15e2425fa8102b51d67e3",
+          "sha1": "1a89ba09b01e33dcbae5955cd3bbd76b0466fc9a",
+          "sha256": "e29f03f51ec76170e1ed1db6229211b77c5463b989713977e6f12a30839134f6"
+        }
+      },
+      "argv": [
+        "\"C:\\Users\\tyler\\AppData\\Local\\Programs\\Microsoft",
+        "VS",
+        "Code\\Code.exe\"",
+        "--type=utility",
+        "--utility-sub-type=node.mojom.NodeService",
+        "--lang=en-US",
+        "--service-sandbox-type=none",
+        "--dns-result-order=ipv4first",
+        "--inspect-port=0",
+        "--user-data-dir=\"C:\\Users\\tyler\\AppData\\Roaming\\Code\"",
+        "--standard-schemes=vscode-webview,vscode-file",
+        "--enable-sandbox",
+        "--secure-schemes=vscode-webview,vscode-file",
+        "--bypasscsp-schemes",
+        "--cors-schemes=vscode-webview,vscode-file",
+        "--fetch-schemes=vscode-webview,vscode-file",
+        "--service-worker-schemes=vscode-webview",
+        "--streaming-schemes",
+        "--mojo-platform-channel-handle=6208",
+        "--field-trial-handle=1636,i,3347990212271722484,7953312167833227713,262144",
+        "--disable-features=CalculateNativeWinOcclusion,SpareRendererForSitePerProcess,WinRetrieveSuggestionsOnlyOnDemand",
+        "/prefetch:8"
+      ],
+      "argc": 22,
+      "command_line": "\"C:\\Users\\tyler\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe\" --type=utility --utility-sub-type=node.mojom.NodeService --lang=en-US --service-sandbox-type=none --dns-result-order=ipv4first --inspect-port=0 --user-data-dir=\"C:\\Users\\tyler\\AppData\\Roaming\\Code\" --standard-schemes=vscode-webview,vscode-file --enable-sandbox --secure-schemes=vscode-webview,vscode-file --bypasscsp-schemes --cors-schemes=vscode-webview,vscode-file --fetch-schemes=vscode-webview,vscode-file --service-worker-schemes=vscode-webview --streaming-schemes --mojo-platform-channel-handle=6208 --field-trial-handle=1636,i,3347990212271722484,7953312167833227713,262144 --disable-features=CalculateNativeWinOcclusion,SpareRendererForSitePerProcess,WinRetrieveSuggestionsOnlyOnDemand /prefetch:8",
+      "create_time": "2023-12-07T12:51:51.23-05:00"
+    }
+  }
+}

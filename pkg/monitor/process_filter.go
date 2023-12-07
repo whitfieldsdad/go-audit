@@ -22,7 +22,7 @@ type ProcessFilter struct {
 	DescendantPids []int `json:"descendant_pids,omitempty"`
 }
 
-func (f *ProcessFilter) Matches(p ProcessRef, t *ProcessTree) (bool, error) {
+func (f *ProcessFilter) Matches(p Process, t *ProcessTree) (bool, error) {
 	if len(f.Pids) > 0 && !slices.Contains(f.Pids, p.Pid) {
 		return false, nil
 	}

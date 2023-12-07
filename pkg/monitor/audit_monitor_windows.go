@@ -2,19 +2,13 @@ package monitor
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"os"
-	"os/signal"
 	"strconv"
-	"sync"
-	"time"
 
 	"github.com/0xrawsec/golang-etw/etw"
 	"github.com/charmbracelet/log"
 	"github.com/google/uuid"
-	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/pkg/errors"
+	"github.com/shirou/gopsutil/v3/process"
 	"github.com/whitfieldsdad/go-audit/pkg/util"
 )
 
@@ -23,346 +17,169 @@ const (
 )
 
 const (
-	WINEVENT_KEYWORD_PROCESS                          = 0x10
-	WINEVENT_KEYWORD_THREAD                           = 0x20
-	WINEVENT_KEYWORD_IMAGE                            = 0x40
-	WINEVENT_KEYWORD_CPU_PRIORITY                     = 0x80
-	WINEVENT_KEYWORD_OTHER_PRIORITY                   = 0x100
-	WINEVENT_KEYWORD_PROCESS_FREEZE                   = 0x200
-	WINEVENT_KEYWORD_JOB                              = 0x400
-	WINEVENT_KEYWORD_ENABLE_PROCESS_TRACING_CALLBACKS = 0x800
-	WINEVENT_KEYWORD_JOB_IO                           = 0x1000
-	WINEVENT_KEYWORD_WORK_ON_BEHALF                   = 0x2000
-	WINEVENT_KEYWORD_JOB_SILO                         = 0x4000
+	WINEVENT_KEYWORD_PROCESS = 0x10
 )
 
 const (
-	ProcessStart = 1
-	ProcessStop  = 2
+	PROCESS_STARTED = 1
+	PROCESS_STOPPED = 2
 )
 
 const (
 	MicrosoftWindowsKernelProcess = "{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}"
 )
 
-var (
-	EventBufferSize = 10000
-)
-
-var (
-	PidMapTTL     = time.Minute * 15
-	PidMapMaxSize = 10000
-)
-
-type WindowsProcessMonitor struct {
-	processFilter *ProcessFilter
-	events        chan *Event
-	rawEvents     chan *etw.Event
-	ppidMap       *expirable.LRU[int, int]
-}
-
-func NewWindowsProcessMonitor(f *ProcessFilter) (*WindowsProcessMonitor, error) {
-	ppidMap, err := GetPPIDMap()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get PPID map")
-	}
-	return &WindowsProcessMonitor{
-		processFilter: f,
-		events:        make(chan *Event, EventBufferSize),
-		rawEvents:     make(chan *etw.Event, EventBufferSize),
-		ppidMap:       ppidMap,
-	}, nil
-}
-
-func (m *WindowsProcessMonitor) AddProcessFilter(filter ProcessFilter) {
-	if m.processFilter == nil {
-		m.processFilter = &filter
-	} else {
-		m.processFilter.Merge(filter)
-	}
-}
-
-func (m *WindowsProcessMonitor) Run(ctx context.Context) error {
-
-	// Create the ETW session.
+func readEvents(ctx context.Context, ch chan interface{}, f *ProcessFilter) error {
 	s := etw.NewRealTimeSession(etwSessionName)
 	if s == nil {
 		return errors.New("failed to create ETW session")
 	}
 	defer s.Stop()
 
-	// Enable the Microsoft-Windows-Kernel-Process provider.
 	p := etw.MustParseProvider(MicrosoftWindowsKernelProcess)
-	p.MatchAnyKeyword = WINEVENT_KEYWORD_PROCESS | WINEVENT_KEYWORD_IMAGE | WINEVENT_KEYWORD_THREAD
+	p.MatchAnyKeyword = WINEVENT_KEYWORD_PROCESS
 
 	err := s.EnableProvider(p)
 	if err != nil {
 		return errors.Wrap(err, "failed to enable Microsoft-Windows-Kernel-Process provider")
 	}
-
-	ctx, cancel := context.WithCancel(ctx)
-
-	// Start goroutines for:
-	// - Reading events
-	// - Parsing events
-	// - Emitting events
-	var wg sync.WaitGroup
-	wg.Add(3)
-
-	go m.goReadEvents(ctx, cancel, s, &wg)
-	go m.goParseEvents(ctx, &wg)
-	go m.goEmitEvents(ctx, &wg)
-
-	// Cancel the context on SIGINT.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
-
-	// Check if either the context was cancelled, or we received a SIGINT.
-	log.Info("Waiting for context cancellation or SIGINT...")
-	select {
-	case <-ctx.Done():
-		log.Infof("Context cancelled")
-		cancel()
-	case <-sigCh:
-		log.Infof("Received SIGINT")
-		cancel()
-	}
-	log.Info("Shutting down...")
-	wg.Wait()
-	log.Info("Shutdown complete")
-	return nil
-}
-
-func (m *WindowsProcessMonitor) eventToProcessRef(e *etw.Event) ProcessRef {
-	pid := int(e.System.Execution.ProcessID)
-
-	var ppid *int
-	if e.System.EventID == ProcessStart {
-		ppid, _ = extractPPID(e)
-	} else {
-		ppidptr, ok := m.ppidMap.Get(pid)
-		if ok {
-			ppid = &ppidptr
-			log.Infof("Resolved PPID from PPID map (PID: %d, PPID: %d)", pid, ppid)
-		}
-	}
-	return ProcessRef{
-		Pid:  pid,
-		Ppid: ppid,
-	}
-}
-
-func (m *WindowsProcessMonitor) goReadEvents(ctx context.Context, cancel context.CancelFunc, s *etw.RealTimeSession, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	c := etw.NewRealTimeConsumer(ctx)
+	c := etw.NewRealTimeConsumer(ctx).FromSessions(s)
 	defer c.Stop()
-
-	c.FromSessions(s)
 
 	go func() {
 		for e := range c.Events {
-			pid := int(e.System.Execution.ProcessID)
-			eventId := e.System.EventID
-			if !(eventId == ProcessStart || eventId == ProcessStop) {
-				continue
+			if ctx.Err() != nil {
+				return
 			}
-			log.Debugf("Read event (ID: %d, keyword name: %s, task name: %s, PID: %d)", eventId, e.System.Keywords.Name, e.System.Task.Name, pid)
-
-			m.updatePPIDMap(e)
-
-			if m.processFilter != nil {
-				p := m.eventToProcessRef(e)
-				matches, err := m.processFilter.Matches(p, nil)
-				if err != nil {
-					log.Fatalf("Failed to evaluate process filter: %s", err)
+			if f != nil {
+				pid := int(e.System.Execution.ProcessID)
+				ppid, _ := extractPPID(e)
+				ref := Process{
+					Pid:  pid,
+					Ppid: ppid,
 				}
-				if !matches {
+				ok, err := f.Matches(ref, nil)
+				if err != nil {
+					continue
+				}
+				if !ok {
 					continue
 				}
 			}
-			m.rawEvents <- e
+			eid := e.System.EventID
+			if eid == PROCESS_STARTED || eid == PROCESS_STOPPED {
+				ch <- e
+			}
 		}
 	}()
 
-	log.Info("Starting consumer...")
-	err := c.Start()
+	// Start the consumer.
+	log.Infof("Starting ETW consumer...")
+	err = c.Start()
 	if err != nil {
-		log.Errorf("Failed to start consumer: %s", err)
-		cancel()
-		return
+		return errors.Wrap(err, "failed to start ETW consumer")
 	}
-	log.Info("Started consumer")
-
+	log.Infof("Reading events...")
 	<-ctx.Done()
-	log.Info("Stopped reading events")
+	log.Infof("Stopped reading events")
+	return nil
 }
 
-func (m *WindowsProcessMonitor) updatePPIDMap(e *etw.Event) {
-	pid := int(e.System.Execution.ProcessID)
-	eid := e.System.EventID
-	if eid == ProcessStop {
-		log.Infof("Removing PID from PPID map (PID: %d, event ID: %d, size: %d)", pid, eid, m.ppidMap.Len())
-		m.ppidMap.Remove(pid)
-		return
-	}
-
-	var ppid *int
-	if e.System.EventID == ProcessStart {
-		ppidstr, ok := e.EventData["ParentProcessID"].(string)
-		if ok {
-			ppidptr, err := strconv.Atoi(ppidstr)
-			if err == nil {
-				ppid = &ppidptr
-			}
-		}
-	}
-	if ppid == nil {
-		log.Warnf("Not adding process to PID map - PPID not found (PID: %d, event ID: %d)", pid, eid)
-	} else {
-		pid := int(e.System.Execution.ProcessID)
-		log.Infof("Adding PID to PPID map (PID: %d, PPID: %d, event ID: %d, size: %d)", pid, ppid, e.System.EventID, m.ppidMap.Len())
-		m.ppidMap.Add(pid, *ppid)
-	}
+func ParseEvent(e interface{}) (*Event, error) {
+	return parseEvent(e.(*etw.Event))
 }
 
-func (m *WindowsProcessMonitor) goParseEvents(ctx context.Context, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	for {
-		select {
-		case r := <-m.rawEvents:
-			e, err := m.parseEvent(r)
-			if e == nil {
-				continue
-			}
-			if err != nil {
-				log.Errorf("Failed to parse event: %s", err)
-			}
-			m.events <- e
-		case <-ctx.Done():
-			log.Info("Stopped parsing events")
-			return
-		}
+func parseEvent(e *etw.Event) (*Event, error) {
+	process, err := extractProcess(e)
+	if process == nil || err != nil {
+		return nil, err
 	}
-}
-
-func (m *WindowsProcessMonitor) parseEvent(e *etw.Event) (*Event, error) {
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return nil, err
+	}
 	var (
-		err        error
-		ppid       *int
-		createTime *time.Time
+		objectType ObjectType
+		eventType  EventType
 	)
-
-	eventId := e.System.EventID
-	if !(eventId == ProcessStart || eventId == ProcessStop) {
+	if e.System.EventID == PROCESS_STARTED {
+		objectType = ObjectTypeProcess
+		eventType = EventTypeStarted
+	} else if e.System.EventID == PROCESS_STOPPED {
+		objectType = ObjectTypeProcess
+		eventType = EventTypeStopped
+	} else {
 		return nil, nil
 	}
-	pid := int(e.System.Execution.ProcessID)
-
-	parentProcessID, ok := e.EventData["ParentProcessID"].(string)
-	if ok {
-		if ppidInt, err := strconv.Atoi(parentProcessID); err == nil {
-			ppid = &ppidInt
-		}
-	}
-
-	createTimeString, ok := e.EventData["CreateTime"].(string)
-	if ok {
-		createTime, _ = util.ParseTimestamp(createTimeString)
-	}
-
-	executable, _ := GetProcessExecutable(pid)
-
-	if eventId == ProcessStart {
-		if ppid == nil {
-			ppid, err = GetPPID(pid)
-			if err == nil {
-				log.Info("Resolved PPID")
-			}
-		}
-		return &Event{
-			Header: EventHeader{
-				ID:         uuid.New().String(),
-				Time:       e.System.TimeCreated.SystemTime,
-				ObjectType: "process",
-				EventType:  "started",
-			},
-			Data: &ProcessStartEventData{
-				PID:        pid,
-				PPID:       ppid,
-				CreateTime: createTime,
-				Executable: executable,
-			},
-		}, nil
-
-	} else if eventId == ProcessStop {
-		var (
-			exitTime *time.Time
-			exitCode *int
-		)
-		exitTimeString, ok := e.EventData["ExitTime"].(string)
-		if ok {
-			exitTime, _ = util.ParseTimestamp(exitTimeString)
-		}
-		exitCodeString, ok := e.EventData["ExitStatus"].(string)
-		if ok {
-			exitCodeInt, _ := strconv.Atoi(exitCodeString)
-			if err == nil {
-				exitCode = &exitCodeInt
-			}
-		}
-		return &Event{
-			Header: EventHeader{
-				ID:         uuid.New().String(),
-				Time:       e.System.TimeCreated.SystemTime,
-				ObjectType: "process",
-				EventType:  "stopped",
-			},
-			Data: &ProcessStopEventData{
-				PID:        pid,
-				PPID:       ppid,
-				CreateTime: createTime,
-				ExitTime:   exitTime,
-				ExitCode:   exitCode,
-				Executable: executable,
-			},
-		}, nil
-	}
-	return nil, nil
+	return &Event{
+		Header: EventHeader{
+			Id:         id.String(),
+			Time:       e.System.TimeCreated.SystemTime,
+			EventType:  eventType.String(),
+			ObjectType: objectType.String(),
+		},
+		Data: EventData{
+			Process: process,
+		},
+	}, nil
 }
 
-func (m *WindowsProcessMonitor) goEmitEvents(ctx context.Context, wg *sync.WaitGroup) {
+func extractProcess(e *etw.Event) (*Process, error) {
 	var (
-		e   *Event
+		p   *Process
 		err error
-		b   []byte
 	)
-	defer wg.Done()
-
-	for {
-		select {
-		case e = <-m.events:
-			b, err = json.Marshal(e)
-			if err != nil {
-				log.Errorf("Failed to marshal event: %s", err)
-			}
-			fmt.Println(string(b))
-		case <-ctx.Done():
-			log.Info("Stopped emitting events")
-			return
+	pid := int(e.System.Execution.ProcessID)
+	eid := e.System.EventID
+	if eid == PROCESS_STOPPED {
+		p, err = extractProcessFromProcessStopEvent(e)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to extract process from process stop event")
+		}
+	} else {
+		p, err = GetProcess(pid)
+		if err != nil && err != process.ErrorProcessNotRunning {
+			return nil, err
 		}
 	}
+	return p, nil
+}
+
+func extractProcessFromProcessStopEvent(e *etw.Event) (*Process, error) {
+	pid := int(e.System.Execution.ProcessID)
+	createTime, err := util.TimeFromRFC3339(e.EventData["CreateTime"].(string))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse create time")
+	}
+	exitTime, err := util.TimeFromRFC3339(e.EventData["ExitTime"].(string))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse exit time")
+	}
+	var exitCode int
+	var exitCodePtr *int
+	s, ok := e.EventData["ExitStatus"].(string)
+	if ok {
+		exitCode, err = strconv.Atoi(s)
+		if err == nil {
+			exitCodePtr = &exitCode
+		}
+	}
+	return &Process{
+		Pid:        pid,
+		CreateTime: createTime,
+		ExitTime:   exitTime,
+		ExitCode:   exitCodePtr,
+	}, nil
 }
 
 func extractPPID(e *etw.Event) (*int, error) {
-	ppidstr, ok := e.EventData["ParentProcessID"].(string)
+	s, ok := e.EventData["ParentProcessID"].(string)
 	if !ok {
 		return nil, nil
 	}
-	ppid, err := strconv.Atoi(ppidstr)
+	v, err := strconv.Atoi(s)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse PPID")
 	}
-	return &ppid, nil
+	return &v, nil
 }
