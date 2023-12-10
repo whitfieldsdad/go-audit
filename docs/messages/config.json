@@ -1,6 +1,0 @@
-{
-  "pid_map": {
-    "max_size": 10000,
-    "max_age": 900
-  }
-}

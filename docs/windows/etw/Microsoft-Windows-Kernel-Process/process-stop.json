@@ -1,16 +1,16 @@
 {
   "EventData": {
-    "CPUCycleCount": "256150524",
-    "CommitCharge": "1126400",
-    "CommitPeak": "1126400",
-    "CreateTime": "‎2023‎-‎11‎-‎30T07:00:23.028558900Z",
+    "CPUCycleCount": "13853956",
+    "CommitCharge": "3006464",
+    "CommitPeak": "3194880",
+    "CreateTime": "‎2023‎-‎12‎-‎10T09:10:54.963208900Z",
     "ExitCode": "0",
-    "ExitTime": "‎2023‎-‎11‎-‎30T07:00:23.222873800Z",
+    "ExitTime": "‎2023‎-‎12‎-‎10T09:10:54.977338800Z",
     "HandleCount": "50",
     "HardFaultCount": "0",
-    "ImageName": "NETSTAT.EXE",
-    "ProcessID": "10956",
-    "ProcessSequenceNumber": "192245",
+    "ImageName": "cmd.exe",
+    "ProcessID": "29896",
+    "ProcessSequenceNumber": "381441",
     "ReadOperationCount": "0",
     "ReadTransferKiloBytes": "0",
     "TokenElevationType": "3",
@@ -20,36 +20,37 @@
   "System": {
     "Channel": "Microsoft-Windows-Kernel-Process/Analytic",
     "Computer": "DESKTOP-LCV0L2T",
-    "EventID": 2,
     "Correlation": {
       "ActivityID": "{00000000-0000-0000-0000-000000000000}",
       "RelatedActivityID": "{00000000-0000-0000-0000-000000000000}"
     },
+    "EventID": 2,
     "Execution": {
-      "ProcessID": 10956,
-      "ThreadID": 9656
+      "ProcessID": 29896,
+      "ThreadID": 30788
     },
     "Keywords": {
-      "Value": 9223372036854775824,
-      "Name": "WINEVENT_KEYWORD_PROCESS"
+      "Name": "WINEVENT_KEYWORD_PROCESS",
+      "Value": 9223372036854776000
     },
     "Level": {
-      "Value": 4,
-      "Name": "Information"
+      "Name": "Information",
+      "Value": 4
     },
     "Opcode": {
-      "Value": 2,
-      "Name": "Stop"
-    },
-    "Task": {
-      "Value": 2,
-      "Name": "ProcessStop"
+      "Name": "Stop",
+      "Value": 2
     },
     "Provider": {
       "Guid": "{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}",
       "Name": "Microsoft-Windows-Kernel-Process"
     },
+    "Task": {
+      "Name": "ProcessStop",
+      "Value": 2
+    },
     "TimeCreated": {
-      "SystemTime": "2023-11-30T07:00:23.222975Z"
+      "SystemTime": "2023-12-10T09:10:54.9773964Z"
     }
   }
+}

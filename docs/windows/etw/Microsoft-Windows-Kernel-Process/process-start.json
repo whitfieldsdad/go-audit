@@ -1,55 +1,55 @@
 {
   "EventData": {
-    "CreateTime": "‎2023‎-‎11‎-‎30T07:00:23.028558900Z",
+    "CreateTime": "‎2023‎-‎12‎-‎10T09:10:54.963208900Z",
     "Flags": "0",
-    "ImageChecksum": "0x119D0",
-    "ImageName": "\\Device\\HarddiskVolume3\\Windows\\System32\\NETSTAT.EXE",
+    "ImageChecksum": "0x548A4",
+    "ImageName": "\\Device\\HarddiskVolume3\\Windows\\System32\\cmd.exe",
     "MandatoryLabel": "S-1-16-8192",
     "PackageFullName": "",
     "PackageRelativeAppId": "",
-    "ParentProcessID": "34464",
-    "ParentProcessSequenceNumber": "178696",
-    "ProcessID": "10956",
-    "ProcessSequenceNumber": "192245",
+    "ParentProcessID": "2076",
+    "ParentProcessSequenceNumber": "379197",
+    "ProcessID": "29896",
+    "ProcessSequenceNumber": "381441",
     "ProcessTokenElevationType": "3",
     "ProcessTokenIsElevated": "0",
     "SessionID": "1",
-    "TimeDateStamp": "0xDA7F7626"
+    "TimeDateStamp": "0xC4DE9332"
   },
   "System": {
     "Channel": "Microsoft-Windows-Kernel-Process/Analytic",
     "Computer": "DESKTOP-LCV0L2T",
-    "EventID": 1,
     "Correlation": {
       "ActivityID": "{00000000-0000-0000-0000-000000000000}",
       "RelatedActivityID": "{00000000-0000-0000-0000-000000000000}"
     },
+    "EventID": 1,
     "Execution": {
-      "ProcessID": 34464,
-      "ThreadID": 29676
+      "ProcessID": 2076,
+      "ThreadID": 19860
     },
     "Keywords": {
-      "Value": 9223372036854775824,
-      "Name": "WINEVENT_KEYWORD_PROCESS"
+      "Name": "WINEVENT_KEYWORD_PROCESS",
+      "Value": 9223372036854776000
     },
     "Level": {
-      "Value": 4,
-      "Name": "Information"
+      "Name": "Information",
+      "Value": 4
     },
     "Opcode": {
-      "Value": 1,
-      "Name": "Start"
-    },
-    "Task": {
-      "Value": 1,
-      "Name": "ProcessStart"
+      "Name": "Start",
+      "Value": 1
     },
     "Provider": {
       "Guid": "{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}",
       "Name": "Microsoft-Windows-Kernel-Process"
     },
+    "Task": {
+      "Name": "ProcessStart",
+      "Value": 1
+    },
     "TimeCreated": {
-      "SystemTime": "2023-11-30T07:00:23.0285898Z"
+      "SystemTime": "2023-12-10T09:10:54.9632491Z"
     }
   }
 }

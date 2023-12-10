@@ -1,8 +1,9 @@
 package monitor
 
 import (
-	"fmt"
 	"time"
+
+	"github.com/whitfieldsdad/go-building-blocks/pkg/bb"
 )
 
 type ObjectType int
@@ -50,10 +51,6 @@ type EventHeader struct {
 	EventType  string    `json:"event_type"`
 }
 
-func (h *EventHeader) Type() string {
-	return fmt.Sprintf("%s %s", h.ObjectType, h.EventType)
-}
-
 func (h *EventHeader) IsProcessEvent() bool {
 	return h.ObjectType == ObjectTypeProcess.String()
 }
@@ -67,5 +64,5 @@ func (h *EventHeader) IsProcessStoppedEvent() bool {
 }
 
 type EventData struct {
-	Process *Process `json:"process"`
+	Process *bb.Process `json:"process"`
 }

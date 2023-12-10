@@ -2,14 +2,11 @@ package monitor
 
 import (
 	"context"
-	"strconv"
+	"encoding/json"
 
 	"github.com/0xrawsec/golang-etw/etw"
 	"github.com/charmbracelet/log"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"github.com/shirou/gopsutil/v3/process"
-	"github.com/whitfieldsdad/go-audit/pkg/util"
 )
 
 const (
@@ -29,20 +26,42 @@ const (
 	MicrosoftWindowsKernelProcess = "{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}"
 )
 
-func readEvents(ctx context.Context, ch chan interface{}, f *ProcessFilter) error {
+// newSession creates a new ETW session and enabled the Microsoft-Windows-Kernel-Process provider.
+func newSession() (*etw.RealTimeSession, error) {
 	s := etw.NewRealTimeSession(etwSessionName)
 	if s == nil {
-		return errors.New("failed to create ETW session")
+		return nil, errors.New("failed to create ETW session")
+	}
+	err := enableProvider(s, MicrosoftWindowsKernelProcess, WINEVENT_KEYWORD_PROCESS, WINEVENT_KEYWORD_PROCESS)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// enableProvider enables the specified provider with the specified keywords.
+func enableProvider(s *etw.RealTimeSession, providerGuid string, matchAnyKeyword, matchAllKeyword uint64) error {
+	p := etw.MustParseProvider(providerGuid)
+	p.MatchAnyKeyword = matchAnyKeyword
+	p.MatchAllKeyword = matchAllKeyword
+
+	log.Infof("Enabling %s provider (GUID: %s, ALL keyword: %x, ANY keyword: %x)", p.Name, p.GUID, p.MatchAllKeyword, p.MatchAnyKeyword)
+	err := s.EnableProvider(p)
+	if err != nil {
+		return errors.Wrap(err, "failed to enable provider")
+	}
+	log.Infof("Enabled %s provider (GUID: %s)", p.Name, p.GUID)
+	return nil
+}
+
+// readRawEvents reads events from the ETW session and sends them to the specified channel.
+func readRawEvents(ctx context.Context, ch chan map[string]interface{}) error {
+	s, err := newSession()
+	if err != nil {
+		return err
 	}
 	defer s.Stop()
 
-	p := etw.MustParseProvider(MicrosoftWindowsKernelProcess)
-	p.MatchAnyKeyword = WINEVENT_KEYWORD_PROCESS
-
-	err := s.EnableProvider(p)
-	if err != nil {
-		return errors.Wrap(err, "failed to enable Microsoft-Windows-Kernel-Process provider")
-	}
 	c := etw.NewRealTimeConsumer(ctx).FromSessions(s)
 	defer c.Stop()
 
@@ -51,29 +70,19 @@ func readEvents(ctx context.Context, ch chan interface{}, f *ProcessFilter) erro
 			if ctx.Err() != nil {
 				return
 			}
-			if f != nil {
-				pid := int(e.System.Execution.ProcessID)
-				ppid, _ := extractPPID(e)
-				ref := Process{
-					Pid:  pid,
-					Ppid: ppid,
-				}
-				ok, err := f.Matches(ref, nil)
-				if err != nil {
-					continue
-				}
-				if !ok {
-					continue
-				}
-			}
 			eid := e.System.EventID
-			if eid == PROCESS_STARTED || eid == PROCESS_STOPPED {
-				ch <- e
+			if eid != PROCESS_STARTED && eid != PROCESS_STOPPED {
+				continue
 			}
+			evt, err := parseEvent(e)
+			if err != nil {
+				log.Errorf("Failed to parse event: %v", err)
+				continue
+			}
+			ch <- evt
 		}
 	}()
 
-	// Start the consumer.
 	log.Infof("Starting ETW consumer...")
 	err = c.Start()
 	if err != nil {
@@ -85,101 +94,15 @@ func readEvents(ctx context.Context, ch chan interface{}, f *ProcessFilter) erro
 	return nil
 }
 
-func ParseEvent(e interface{}) (*Event, error) {
-	return parseEvent(e.(*etw.Event))
-}
-
-func parseEvent(e *etw.Event) (*Event, error) {
-	process, err := extractProcess(e)
-	if process == nil || err != nil {
-		return nil, err
-	}
-	id, err := uuid.NewRandom()
+func parseEvent(e *etw.Event) (map[string]interface{}, error) {
+	b, err := json.Marshal(e)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to marshal event")
 	}
-	var (
-		objectType ObjectType
-		eventType  EventType
-	)
-	if e.System.EventID == PROCESS_STARTED {
-		objectType = ObjectTypeProcess
-		eventType = EventTypeStarted
-	} else if e.System.EventID == PROCESS_STOPPED {
-		objectType = ObjectTypeProcess
-		eventType = EventTypeStopped
-	} else {
-		return nil, nil
-	}
-	return &Event{
-		Header: EventHeader{
-			Id:         id.String(),
-			Time:       e.System.TimeCreated.SystemTime,
-			EventType:  eventType.String(),
-			ObjectType: objectType.String(),
-		},
-		Data: EventData{
-			Process: process,
-		},
-	}, nil
-}
-
-func extractProcess(e *etw.Event) (*Process, error) {
-	var (
-		p   *Process
-		err error
-	)
-	pid := int(e.System.Execution.ProcessID)
-	eid := e.System.EventID
-	if eid == PROCESS_STOPPED {
-		p, err = extractProcessFromProcessStopEvent(e)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to extract process from process stop event")
-		}
-	} else {
-		p, err = GetProcess(pid)
-		if err != nil && err != process.ErrorProcessNotRunning {
-			return nil, err
-		}
-	}
-	return p, nil
-}
-
-func extractProcessFromProcessStopEvent(e *etw.Event) (*Process, error) {
-	pid := int(e.System.Execution.ProcessID)
-	createTime, err := util.TimeFromRFC3339(e.EventData["CreateTime"].(string))
+	m := make(map[string]interface{})
+	err = json.Unmarshal(b, &m)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse create time")
+		return nil, errors.Wrap(err, "failed to unmarshal event")
 	}
-	exitTime, err := util.TimeFromRFC3339(e.EventData["ExitTime"].(string))
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse exit time")
-	}
-	var exitCode int
-	var exitCodePtr *int
-	s, ok := e.EventData["ExitStatus"].(string)
-	if ok {
-		exitCode, err = strconv.Atoi(s)
-		if err == nil {
-			exitCodePtr = &exitCode
-		}
-	}
-	return &Process{
-		Pid:        pid,
-		CreateTime: createTime,
-		ExitTime:   exitTime,
-		ExitCode:   exitCodePtr,
-	}, nil
-}
-
-func extractPPID(e *etw.Event) (*int, error) {
-	s, ok := e.EventData["ParentProcessID"].(string)
-	if !ok {
-		return nil, nil
-	}
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse PPID")
-	}
-	return &v, nil
+	return m, nil
 }
