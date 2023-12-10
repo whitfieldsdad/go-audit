@@ -16,16 +16,12 @@ var (
 )
 
 type AuditMonitor struct {
-	rawEvents          chan map[string]interface{}
-	processStartEvents chan *Event
-	processStopEvents  chan *Event
+	rawEvents chan map[string]interface{}
 }
 
 func NewAuditMonitor() (*AuditMonitor, error) {
 	return &AuditMonitor{
-		rawEvents:          make(chan map[string]interface{}, EventBufferSize),
-		processStartEvents: make(chan *Event, EventBufferSize),
-		processStopEvents:  make(chan *Event, EventBufferSize),
+		rawEvents: make(chan map[string]interface{}, EventBufferSize),
 	}, nil
 }
 
