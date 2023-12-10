@@ -32,11 +32,11 @@ func NewJSONLFileEventSink(path string) (*JSONLFileEventSink, error) {
 	return s, nil
 }
 
-func (s *JSONLFileEventSink) GetLockFilePath() string {
+func (s JSONLFileEventSink) GetLockFilePath() string {
 	return fmt.Sprintf("%s.lock", s.Path)
 }
 
-func (s *JSONLFileEventSink) Write(ctx context.Context, event Event) error {
+func (s JSONLFileEventSink) Write(ctx context.Context, event Event) error {
 	b, err := json.Marshal(event)
 	if err != nil {
 		return errors.Wrap(err, "failed to marshal event")
@@ -75,11 +75,11 @@ func NewDirectoryEventSink(path string) (*DirectoryEventSink, error) {
 	return s, nil
 }
 
-func (s *DirectoryEventSink) GetFilePath(event Event) string {
+func (s DirectoryEventSink) GetFilePath(event Event) string {
 	return fmt.Sprintf("%s/%s.json", s.Path, event.Header.Id)
 }
 
-func (s *DirectoryEventSink) Write(ctx context.Context, event Event) error {
+func (s DirectoryEventSink) Write(ctx context.Context, event Event) error {
 	path := s.GetFilePath(event)
 	b, err := json.Marshal(event)
 	if err != nil {
@@ -100,7 +100,7 @@ func (s *DirectoryEventSink) Write(ctx context.Context, event Event) error {
 
 type StdoutEventSink struct{}
 
-func (s *StdoutEventSink) Write(ctx context.Context, event Event) error {
+func (s StdoutEventSink) Write(ctx context.Context, event Event) error {
 	b, err := json.Marshal(event)
 	if err != nil {
 		return errors.Wrap(err, "failed to marshal event")
@@ -128,15 +128,15 @@ func NewAMQPEventSink(host string, port int, username, password, queueName strin
 	}
 }
 
-func (s *AMQPEventSink) GetURI() string {
+func (s AMQPEventSink) GetURI() string {
 	return fmt.Sprintf("amqp://%s:%s@%s:%d/", s.Username, s.Password, s.Host, s.Port)
 }
 
-func (s *AMQPEventSink) GetMaskedURI() string {
+func (s AMQPEventSink) GetMaskedURI() string {
 	return fmt.Sprintf("amqp://%s:***@%s:%d/", s.Username, s.Host, s.Port)
 }
 
-func (s *AMQPEventSink) Connect() error {
+func (s AMQPEventSink) Connect() error {
 	var err error
 	maskedURI := s.GetMaskedURI()
 	log.Infof("Connecting to %s", maskedURI)
@@ -148,14 +148,14 @@ func (s *AMQPEventSink) Connect() error {
 	return nil
 }
 
-func (s *AMQPEventSink) Close() error {
+func (s AMQPEventSink) Close() error {
 	if s.conn != nil {
 		return s.conn.Close()
 	}
 	return nil
 }
 
-func (s *AMQPEventSink) Write(ctx context.Context, event Event) error {
+func (s AMQPEventSink) Write(ctx context.Context, event Event) error {
 	log.Debugf("Writing event to %s", s.GetMaskedURI())
 	if s.conn == nil {
 		err := s.Connect()

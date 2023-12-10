@@ -54,8 +54,8 @@ func enableProvider(s *etw.RealTimeSession, providerGuid string, matchAnyKeyword
 	return nil
 }
 
-// readRawEvents reads events from the ETW session and sends them to the specified channel.
-func readRawEvents(ctx context.Context, ch chan map[string]interface{}) error {
+// readRawAuditEvents reads events from the ETW session and sends them to the specified channel.
+func readRawAuditEvents(ctx context.Context, ch chan Event) error {
 	s, err := newSession()
 	if err != nil {
 		return err
@@ -79,7 +79,7 @@ func readRawEvents(ctx context.Context, ch chan map[string]interface{}) error {
 				log.Errorf("Failed to parse event: %v", err)
 				continue
 			}
-			ch <- evt
+			ch <- *evt
 		}
 	}()
 
@@ -94,7 +94,33 @@ func readRawEvents(ctx context.Context, ch chan map[string]interface{}) error {
 	return nil
 }
 
-func parseEvent(e *etw.Event) (map[string]interface{}, error) {
+func parseEvent(e *etw.Event) (*Event, error) {
+	var (
+		objectType string
+		eventType  string
+	)
+	if e.System.Task.Name == "ProcessStart" {
+		objectType = ObjectTypeProcess
+		eventType = EventTypeStarted
+	} else if e.System.Task.Name == "ProcessStop" {
+		objectType = ObjectTypeProcess
+		eventType = EventTypeStopped
+	} else {
+		return nil, nil
+	}
+	data, err := marshalEvent(e)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to marshal event")
+	}
+	pid := int(e.System.Execution.ProcessID)
+	evt, err := NewEvent(nil, objectType, eventType, pid, data)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create event")
+	}
+	return evt, nil
+}
+
+func marshalEvent(e *etw.Event) (map[string]interface{}, error) {
 	b, err := json.Marshal(e)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to marshal event")

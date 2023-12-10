@@ -6,63 +6,52 @@ import (
 	"github.com/whitfieldsdad/go-building-blocks/pkg/bb"
 )
 
-type ObjectType int
-
 const (
-	ObjectTypeProcess ObjectType = iota + 1
+	ObjectTypeProcess = "process"
 )
 
-func (t ObjectType) String() string {
-	switch t {
-	case ObjectTypeProcess:
-		return "process"
-	default:
-		return "unknown"
-	}
-}
-
-type EventType int
-
 const (
-	EventTypeStarted EventType = iota + 1
-	EventTypeStopped
+	EventTypeStarted = "started"
+	EventTypeStopped = "stopped"
 )
-
-func (t EventType) String() string {
-	switch t {
-	case EventTypeStarted:
-		return "started"
-	case EventTypeStopped:
-		return "stopped"
-	default:
-		return "unknown"
-	}
-}
 
 type Event struct {
-	Header EventHeader `json:"header"`
-	Data   EventData   `json:"data"`
+	Header EventHeader            `json:"header"`
+	Data   map[string]interface{} `json:"data"`
 }
 
 type EventHeader struct {
 	Id         string    `json:"id"`
 	Time       time.Time `json:"time"`
+	Pid        int       `json:"pid"`
 	ObjectType string    `json:"object_type"`
 	EventType  string    `json:"event_type"`
 }
 
-func (h *EventHeader) IsProcessEvent() bool {
-	return h.ObjectType == ObjectTypeProcess.String()
+func NewEvent(timestampptr *time.Time, objectType, eventType string, pid int, data map[string]interface{}) (*Event, error) {
+	var timestamp time.Time
+	if timestampptr == nil {
+		timestamp = time.Now()
+	} else {
+		timestamp = *timestampptr
+	}
+	header := EventHeader{
+		Id:         bb.NewUUID4(),
+		Time:       timestamp,
+		Pid:        pid,
+		ObjectType: objectType,
+		EventType:  eventType,
+	}
+	return &Event{
+		Header: header,
+		Data:   data,
+	}, nil
 }
 
-func (h *EventHeader) IsProcessStartedEvent() bool {
-	return h.IsProcessEvent() && h.EventType == EventTypeStarted.String()
+func NewProcessStartEvent(timestampptr *time.Time, pid int, data map[string]interface{}) (*Event, error) {
+	return NewEvent(timestampptr, ObjectTypeProcess, EventTypeStarted, pid, data)
 }
 
-func (h *EventHeader) IsProcessStoppedEvent() bool {
-	return h.IsProcessEvent() && h.EventType == EventTypeStopped.String()
-}
-
-type EventData struct {
-	Process *bb.Process `json:"process"`
+func NewProcessStopEvent(timestampptr *time.Time, pid int, data map[string]interface{}) (*Event, error) {
+	return NewEvent(timestampptr, ObjectTypeProcess, EventTypeStopped, pid, data)
 }

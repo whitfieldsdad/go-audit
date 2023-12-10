@@ -2,13 +2,12 @@ package monitor
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"os"
 	"os/signal"
 	"sync"
 
 	"github.com/charmbracelet/log"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -16,12 +15,23 @@ var (
 )
 
 type AuditMonitor struct {
-	rawEvents chan map[string]interface{}
+	events    chan Event
+	eventSink EventSink
 }
 
-func NewAuditMonitor() (*AuditMonitor, error) {
+func NewAuditMonitor(sink EventSink) (*AuditMonitor, error) {
+	if _, err := os.Stat(RawAuditEventDir); os.IsNotExist(err) {
+		err := os.MkdirAll(RawAuditEventDir, 0755)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create directory for storing raw audit events")
+		}
+	}
+	if sink == nil {
+		sink = &StdoutEventSink{}
+	}
 	return &AuditMonitor{
-		rawEvents: make(chan map[string]interface{}, EventBufferSize),
+		eventSink: sink,
+		events:    make(chan Event, EventBufferSize),
 	}, nil
 }
 
@@ -56,7 +66,7 @@ func (m *AuditMonitor) Run(ctx context.Context) error {
 func (m *AuditMonitor) goConsumeRawEvents(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	err := readRawEvents(ctx, m.rawEvents)
+	err := readRawAuditEvents(ctx, m.events)
 	if err != nil {
 		log.Errorf("Failed to read events: %v", err)
 		cancel()
@@ -69,9 +79,8 @@ func (m *AuditMonitor) goProduceRawEvents(ctx context.Context, cancel context.Ca
 		select {
 		case <-ctx.Done():
 			return
-		case e := <-m.rawEvents:
-			b, _ := json.Marshal(e)
-			fmt.Println(string(b))
+		case e := <-m.events:
+			m.eventSink.Write(ctx, e)
 		}
 	}
 }

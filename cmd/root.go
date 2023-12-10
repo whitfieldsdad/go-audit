@@ -21,7 +21,7 @@ var runCmd = &cobra.Command{
 		setLogLevel(debug)
 
 		ctx := context.Background()
-		monitor, err := monitor.NewAuditMonitor()
+		monitor, err := monitor.NewAuditMonitor(nil)
 		if err != nil {
 			log.Fatalf("Failed to create process monitor: %v", err)
 		}
