@@ -15,23 +15,18 @@ var (
 )
 
 type AuditMonitor struct {
-	events    chan Event
-	eventSink EventSink
+	Events chan Event
 }
 
-func NewAuditMonitor(sink EventSink) (*AuditMonitor, error) {
+func NewAuditMonitor() (*AuditMonitor, error) {
 	if _, err := os.Stat(RawAuditEventDir); os.IsNotExist(err) {
 		err := os.MkdirAll(RawAuditEventDir, 0755)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create directory for storing raw audit events")
 		}
 	}
-	if sink == nil {
-		sink = &StdoutEventSink{}
-	}
 	return &AuditMonitor{
-		eventSink: sink,
-		events:    make(chan Event, EventBufferSize),
+		Events: make(chan Event, EventBufferSize),
 	}, nil
 }
 
@@ -41,8 +36,7 @@ func (m *AuditMonitor) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	go m.goConsumeRawEvents(ctx, cancel, &wg)
-	go m.goProduceRawEvents(ctx, cancel, &wg)
+	go m.goReadEvents(ctx, cancel, &wg)
 
 	// Handle signals.
 	signalChannel := make(chan os.Signal, 1)
@@ -63,24 +57,12 @@ func (m *AuditMonitor) Run(ctx context.Context) error {
 	return nil
 }
 
-func (m *AuditMonitor) goConsumeRawEvents(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup) {
+func (m *AuditMonitor) goReadEvents(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	err := readRawAuditEvents(ctx, m.events)
 	if err != nil {
 		log.Errorf("Failed to read events: %v", err)
 		cancel()
-	}
-}
-
-func (m *AuditMonitor) goProduceRawEvents(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case e := <-m.events:
-			m.eventSink.Write(ctx, e)
-		}
 	}
 }
