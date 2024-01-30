@@ -25,11 +25,7 @@ type Event struct {
 }
 
 type ProcessStartEventData struct {
-	PID        int32      `json:"pid"`
-	PPID       int32      `json:"ppid"`
-	Name       string     `json:"name"`
-	Executable *File      `json:"executable"`
-	CreateTime *time.Time `json:"create_time,omitempty"`
+	Process
 }
 
 type ProcessStopEventData struct {

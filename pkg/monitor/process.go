@@ -7,6 +7,16 @@ import (
 	ps "github.com/shirou/gopsutil/v3/process"
 )
 
+type ProcessOptions struct {
+	IncludeHashes bool `json:"include_hashes"`
+}
+
+func GetDefaultProcessOptions() *ProcessOptions {
+	return &ProcessOptions{
+		IncludeHashes: true,
+	}
+}
+
 type Process struct {
 	PID         int32      `json:"pid"`
 	PPID        int32      `json:"ppid"`
@@ -21,16 +31,6 @@ type Process struct {
 
 func (p Process) Hash() uint64 {
 	return calculateProcessId(p.PID, p.PPID)
-}
-
-type ProcessOptions struct {
-	IncludeHashes bool `json:"include_hashes"`
-}
-
-func GetDefaultProcessOptions() *ProcessOptions {
-	return &ProcessOptions{
-		IncludeHashes: true,
-	}
 }
 
 func ListProcesses(opts *ProcessOptions) ([]Process, error) {
@@ -54,6 +54,25 @@ func ListProcesses(opts *ProcessOptions) ([]Process, error) {
 		results = append(results, process)
 	}
 	return results, nil
+}
+
+func GetProcess(pid int32, opts *ProcessOptions) (*Process, error) {
+	if opts == nil {
+		opts = GetDefaultProcessOptions()
+	}
+	p, err := ps.NewProcess(pid)
+	if err != nil {
+		return nil, err
+	}
+	process := parseProcess(p)
+	if opts.IncludeHashes && process.Executable != nil {
+		hashes, err := GetFileHashes(process.Executable.Path)
+		if err != nil {
+			return nil, err
+		}
+		process.Executable.Hashes = hashes
+	}
+	return &process, nil
 }
 
 func parseProcess(p *ps.Process) Process {
@@ -88,6 +107,15 @@ func parseProcess(p *ps.Process) Process {
 		Executable:  executable,
 	}
 	return process
+}
+
+type ProcessIdentity struct {
+	PID  int32 `json:"pid"`
+	PPID int32 `json:"ppid"`
+}
+
+func (p ProcessIdentity) Hash() uint64 {
+	return calculateProcessId(p.PID, p.PPID)
 }
 
 func calculateProcessId(pid, ppid int32) uint64 {

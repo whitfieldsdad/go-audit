@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	ProcessListInterval = 100 * time.Millisecond
+	ProcessListInterval = 10 * time.Millisecond
 	EventBufferSize     = 10000
 )
 
@@ -71,13 +71,13 @@ func (m *AuditMonitor) pollAuditEvents(ctx context.Context, cancel context.Cance
 	opts := &ProcessOptions{
 		IncludeHashes: false,
 	}
-	ps, err := ListProcesses(opts)
+	ids, err := listProcessIdentities()
 	if err != nil {
 		log.Errorf("Failed to list processes: %v", err)
 		return
 	}
-	for _, p := range ps {
-		seen.Add(p.Hash(), p)
+	for _, id := range ids {
+		seen.Add(id.Hash(), id)
 	}
 
 	ticker := time.NewTicker(ProcessListInterval)
@@ -86,25 +86,31 @@ func (m *AuditMonitor) pollAuditEvents(ctx context.Context, cancel context.Cance
 	for {
 		select {
 		case <-ticker.C:
-			ps, err := ListProcesses(opts)
+			ids, err := listProcessIdentities()
 			if err != nil {
 				log.Errorf("Failed to list processes: %v", err)
 				return
 			}
-			for _, p := range ps {
-				_, ok := seen.Get(p.Hash())
+			for _, id := range ids {
+				h := id.Hash()
+				_, ok := seen.Get(h)
 				if !ok {
-					seen.Add(p.Hash(), p)
-					d := ProcessStartEventData{
-						PID:        p.PID,
-						PPID:       p.PPID,
-						Name:       p.Name,
-						CreateTime: p.CreateTime,
-						Executable: p.Executable,
-					}
-					log.Infof("Process started (PID: %d, PPID: %d, name: %s)", d.PID, d.PPID, d.Name)
+					seen.Add(h, id)
 
-					m.Events <- NewEvent(ObjectTypeProcess, EventTypeStarted, d)
+					var process *Process
+					process, err = GetProcess(id.PID, opts)
+					if err != nil {
+						log.Warnf("A new process was detected, but we weren't fast enough to get its details: %v (PID: %d, PPID: %d)", err, id.PID, id.PPID)
+						process = &Process{
+							PID:  id.PID,
+							PPID: id.PPID,
+						}
+					}
+					details := ProcessStartEventData{
+						Process: *process,
+					}
+					log.Infof("Process started (PID: %d, PPID: %d, name: %s)", process.PID, process.PPID, process.Name)
+					m.Events <- NewEvent(ObjectTypeProcess, EventTypeStarted, details)
 				}
 			}
 
