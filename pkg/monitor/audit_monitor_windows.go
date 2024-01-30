@@ -26,7 +26,6 @@ const (
 	MicrosoftWindowsKernelProcess = "{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}"
 )
 
-// newSession creates a new ETW session and enabled the Microsoft-Windows-Kernel-Process provider.
 func newSession() (*etw.RealTimeSession, error) {
 	s := etw.NewRealTimeSession(etwSessionName)
 	if s == nil {
@@ -39,7 +38,6 @@ func newSession() (*etw.RealTimeSession, error) {
 	return s, nil
 }
 
-// enableProvider enables the specified provider with the specified keywords.
 func enableProvider(s *etw.RealTimeSession, providerGuid string, matchAnyKeyword, matchAllKeyword uint64) error {
 	p := etw.MustParseProvider(providerGuid)
 	p.MatchAnyKeyword = matchAnyKeyword
@@ -54,8 +52,7 @@ func enableProvider(s *etw.RealTimeSession, providerGuid string, matchAnyKeyword
 	return nil
 }
 
-// readRawAuditEvents reads events from the ETW session and sends them to the specified channel.
-func readRawAuditEvents(ctx context.Context, ch chan Event) error {
+func traceAuditEvents(ctx context.Context, ch chan Event) error {
 	s, err := newSession()
 	if err != nil {
 		return err
@@ -94,6 +91,7 @@ func readRawAuditEvents(ctx context.Context, ch chan Event) error {
 	return nil
 }
 
+// TODO: process data
 func parseEvent(e *etw.Event) (*Event, error) {
 	var (
 		objectType string

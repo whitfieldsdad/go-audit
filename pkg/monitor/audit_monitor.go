@@ -5,13 +5,15 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/log"
-	"github.com/pkg/errors"
+	lru "github.com/hashicorp/golang-lru"
 )
 
 var (
-	EventBufferSize = 10000
+	ProcessListInterval = 100 * time.Millisecond
+	EventBufferSize     = 10000
 )
 
 type AuditMonitor struct {
@@ -19,12 +21,6 @@ type AuditMonitor struct {
 }
 
 func NewAuditMonitor() (*AuditMonitor, error) {
-	if _, err := os.Stat(RawAuditEventDir); os.IsNotExist(err) {
-		err := os.MkdirAll(RawAuditEventDir, 0755)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to create directory for storing raw audit events")
-		}
-	}
 	return &AuditMonitor{
 		Events: make(chan Event, EventBufferSize),
 	}, nil
@@ -34,7 +30,7 @@ func (m *AuditMonitor) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(1)
 
 	go m.goReadEvents(ctx, cancel, &wg)
 
@@ -51,18 +47,69 @@ func (m *AuditMonitor) Run(ctx context.Context) error {
 		log.Infof("Received SIGINT")
 		cancel()
 	}
-	log.Info("Shutting down...")
 	wg.Wait()
-	log.Info("Shutdown complete")
 	return nil
 }
 
 func (m *AuditMonitor) goReadEvents(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	err := readRawAuditEvents(ctx, m.events)
+	err := traceAuditEvents(ctx, m.Events)
 	if err != nil {
-		log.Errorf("Failed to read events: %v", err)
-		cancel()
+		log.Warnf("Failed to trace audit events: %s", err)
+		log.Info("Falling back to polling audit events")
+		m.pollAuditEvents(ctx, cancel, wg)
+	}
+}
+
+func (m *AuditMonitor) pollAuditEvents(ctx context.Context, cancel context.CancelFunc, wg *sync.WaitGroup) {
+	seen, err := lru.New(10000)
+	if err != nil {
+		log.Errorf("Failed to create LRU cache: %v", err)
+		return
+	}
+	opts := &ProcessOptions{
+		IncludeHashes: false,
+	}
+	ps, err := ListProcesses(opts)
+	if err != nil {
+		log.Errorf("Failed to list processes: %v", err)
+		return
+	}
+	for _, p := range ps {
+		seen.Add(p.Hash(), p)
+	}
+
+	ticker := time.NewTicker(ProcessListInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ps, err := ListProcesses(opts)
+			if err != nil {
+				log.Errorf("Failed to list processes: %v", err)
+				return
+			}
+			for _, p := range ps {
+				_, ok := seen.Get(p.Hash())
+				if !ok {
+					seen.Add(p.Hash(), p)
+					d := ProcessStartEventData{
+						PID:        p.PID,
+						PPID:       p.PPID,
+						Name:       p.Name,
+						CreateTime: p.CreateTime,
+						Executable: p.Executable,
+					}
+					log.Infof("Process started (PID: %d, PPID: %d, name: %s)", d.PID, d.PPID, d.Name)
+
+					m.Events <- NewEvent(ObjectTypeProcess, EventTypeStarted, d)
+				}
+			}
+
+		case <-ctx.Done():
+			return
+		}
 	}
 }

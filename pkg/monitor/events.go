@@ -3,12 +3,16 @@ package monitor
 import (
 	"time"
 
-	"github.com/whitfieldsdad/go-building-blocks/pkg/bb"
+	"github.com/google/uuid"
 )
+
+type ObjectType string
 
 const (
 	ObjectTypeProcess = "process"
 )
+
+type EventType string
 
 const (
 	EventTypeStarted = "started"
@@ -16,42 +20,40 @@ const (
 )
 
 type Event struct {
-	Header EventHeader            `json:"header"`
-	Data   map[string]interface{} `json:"data"`
+	Header EventHeader `json:"header"`
+	Data   interface{} `json:"data"`
+}
+
+type ProcessStartEventData struct {
+	PID        int32      `json:"pid"`
+	PPID       int32      `json:"ppid"`
+	Name       string     `json:"name"`
+	Executable *File      `json:"executable"`
+	CreateTime *time.Time `json:"create_time,omitempty"`
+}
+
+type ProcessStopEventData struct {
+	PID        int32      `json:"pid"`
+	PPID       *int32     `json:"ppid,omitempty"`
+	CreateTime *time.Time `json:"create_time,omitempty"`
+	ExitTime   *time.Time `json:"exit_time,omitempty"`
 }
 
 type EventHeader struct {
-	Id         string    `json:"id"`
-	Time       time.Time `json:"time"`
-	Pid        int       `json:"pid"`
-	ObjectType string    `json:"object_type"`
-	EventType  string    `json:"event_type"`
+	Id         string     `json:"id"`
+	Time       time.Time  `json:"time"`
+	ObjectType ObjectType `json:"object_type"`
+	EventType  EventType  `json:"event_type"`
 }
 
-func NewEvent(timestampptr *time.Time, objectType, eventType string, pid int, data map[string]interface{}) (*Event, error) {
-	var timestamp time.Time
-	if timestampptr == nil {
-		timestamp = time.Now()
-	} else {
-		timestamp = *timestampptr
+func NewEvent(objectType ObjectType, eventType EventType, details interface{}) Event {
+	return Event{
+		Header: EventHeader{
+			Id:         uuid.New().String(),
+			Time:       time.Now(),
+			ObjectType: objectType,
+			EventType:  eventType,
+		},
+		Data: details,
 	}
-	header := EventHeader{
-		Id:         bb.NewUUID4(),
-		Time:       timestamp,
-		Pid:        pid,
-		ObjectType: objectType,
-		EventType:  eventType,
-	}
-	return &Event{
-		Header: header,
-		Data:   data,
-	}, nil
-}
-
-func NewProcessStartEvent(timestampptr *time.Time, pid int, data map[string]interface{}) (*Event, error) {
-	return NewEvent(timestampptr, ObjectTypeProcess, EventTypeStarted, pid, data)
-}
-
-func NewProcessStopEvent(timestampptr *time.Time, pid int, data map[string]interface{}) (*Event, error) {
-	return NewEvent(timestampptr, ObjectTypeProcess, EventTypeStopped, pid, data)
 }

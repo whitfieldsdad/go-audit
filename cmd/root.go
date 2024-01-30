@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"os/signal"
 
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
@@ -21,7 +23,17 @@ var runCmd = &cobra.Command{
 		setLogLevel(debug)
 
 		ctx := context.Background()
-		monitor, err := monitor.NewAuditMonitor(nil)
+
+		// Handle SIGINT and SIGTERM.
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt)
+		go func() {
+			<-sigCh
+			log.Info("Shutting down...")
+			os.Exit(0)
+		}()
+
+		monitor, err := monitor.NewAuditMonitor()
 		if err != nil {
 			log.Fatalf("Failed to create process monitor: %v", err)
 		}
