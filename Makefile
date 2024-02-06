@@ -14,13 +14,6 @@ help:
 	@echo "make [test]"
 	@echo "make [run]"
 
-up:
-	docker-compose up -d
-	make run
-
-down:
-	docker-compose down --remove-orphans
-
 run:
 	go run main.go
 
