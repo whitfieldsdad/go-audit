@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
@@ -33,13 +36,37 @@ var runCmd = &cobra.Command{
 			os.Exit(0)
 		}()
 
-		monitor, err := monitor.NewAuditMonitor()
+		f := &monitor.ProcessFilter{}
+		ancestorPids, _ := cmd.Flags().GetInt32Slice("ancestor-pid")
+		f.AncestorPIDs = ancestorPids
+
+		monitor, err := monitor.NewAuditMonitor(f)
 		if err != nil {
 			log.Fatalf("Failed to create process monitor: %v", err)
 		}
-		err = monitor.Run(ctx)
-		if err != nil {
-			log.Fatalf("Failed to run process monitor: %v", err)
+
+		// Run the monitor in a goroutine.
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			err := monitor.Run(ctx)
+			if err != nil {
+				log.Errorf("Monitor failed: %v", err)
+			}
+		}()
+
+		// Continuously read events from the monitor.
+		for {
+			select {
+			case event := <-monitor.Events:
+				b, err := json.Marshal(event)
+				if err != nil {
+					log.Fatalf("Failed to marshal event: %v", err)
+				}
+				fmt.Println(string(b))
+			}
 		}
 	},
 }
@@ -56,6 +83,8 @@ func setLogLevel(debug bool) {
 
 func init() {
 	rootCmd.PersistentFlags().BoolP("debug", "d", false, "Debug")
+	runCmd.PersistentFlags().Int32Slice("ancestor-pid", []int32{}, "Ancestor PIDs")
+
 	rootCmd.AddCommand(runCmd)
 }
 

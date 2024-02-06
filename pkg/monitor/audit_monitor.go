@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"time"
 
@@ -17,12 +18,14 @@ var (
 )
 
 type AuditMonitor struct {
-	Events chan Event
+	Events        chan Event
+	ProcessFilter *ProcessFilter
 }
 
-func NewAuditMonitor() (*AuditMonitor, error) {
+func NewAuditMonitor(f *ProcessFilter) (*AuditMonitor, error) {
 	return &AuditMonitor{
-		Events: make(chan Event, EventBufferSize),
+		Events:        make(chan Event, EventBufferSize),
+		ProcessFilter: f,
 	}, nil
 }
 
@@ -83,15 +86,36 @@ func (m *AuditMonitor) pollAuditEvents(ctx context.Context, cancel context.Cance
 	ticker := time.NewTicker(ProcessListInterval)
 	defer ticker.Stop()
 
+	var tree *ProcessTree
+	f := m.ProcessFilter
+
 	for {
 		select {
 		case <-ticker.C:
 			ids, err := listProcessIdentities()
 			if err != nil {
-				log.Errorf("Failed to list processes: %v", err)
+				log.Fatalf("Failed to list processes: %v", err)
 				return
 			}
+
+			if f != nil && len(f.AncestorPIDs) > 0 {
+				tree, err = GetProcessTree()
+				if err != nil {
+					log.Fatalf("Failed to get process tree: %v", err)
+				}
+			}
 			for _, id := range ids {
+				if f != nil {
+					if f.PIDs != nil && !slices.Contains(f.PIDs, id.PID) {
+						continue
+					}
+					if len(f.AncestorPIDs) > 0 {
+						if !tree.IsDescendantOfAny(id.PID, f.AncestorPIDs) {
+							continue
+						}
+					}
+				}
+
 				h := id.Hash()
 				_, ok := seen.Get(h)
 				if !ok {
